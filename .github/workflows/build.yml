@@ -1,0 +1,76 @@
+name: Build BusyBox
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "BusyBox version"
+        required: true
+        default: "1.36.1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: busybox-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: sudo BUSYBOX_VERSION=${{ inputs.version }} TARGET_ARCH=${{ matrix.arch }} ./build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: busybox_${{ inputs.version }}_${{ matrix.arch }}
+          path: builds/${{ inputs.version }}/${{ matrix.arch }}/busybox
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release
+        run: |
+          mkdir release
+          for dir in artifacts/busybox_*; do
+            name=$(basename "$dir")
+            cp "$dir/busybox" "release/${name}"
+            chmod +x "release/${name}"
+          done
+          ls -la release/
+          for f in release/*; do
+            echo "$f: $(file "$f" | cut -d: -f2)"
+            sha256sum "$f"
+          done
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: BusyBox v${{ inputs.version }}
+          body: |
+            Minimal BusyBox v${{ inputs.version }} static builds (musl) for E2B sandbox systeminit.
+
+            | File | Arch | Size |
+            |------|------|------|
+            | `busybox_${{ inputs.version }}_amd64` | x86-64 | see below |
+            | `busybox_${{ inputs.version }}_arm64` | aarch64 | see below |
+
+            Built with only ~47 systeminit applets. See [`build.sh`](../../blob/main/build.sh) for config.
+          files: release/*
