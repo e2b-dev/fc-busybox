@@ -1,12 +1,9 @@
 name: Build BusyBox
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "BusyBox version"
-        required: true
-        default: "1.36.1"
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -26,20 +23,36 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Tag format: v1.36.1 or v1.36.1-20260401
+          TAG="${GITHUB_REF_NAME}"
+          # Extract busybox upstream version (everything before first dash after v)
+          BUSYBOX_VERSION="${TAG#v}"
+          BUSYBOX_VERSION="${BUSYBOX_VERSION%%-*}"
+          echo "busybox_version=${BUSYBOX_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building BusyBox ${BUSYBOX_VERSION} from tag ${TAG}"
+
       - name: Build
-        run: sudo BUSYBOX_VERSION=${{ inputs.version }} TARGET_ARCH=${{ matrix.arch }} ./build.sh
+        run: sudo BUSYBOX_VERSION=${{ steps.version.outputs.busybox_version }} TARGET_ARCH=${{ matrix.arch }} ./build.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: busybox_${{ inputs.version }}_${{ matrix.arch }}
-          path: builds/${{ inputs.version }}/${{ matrix.arch }}/busybox
+          name: busybox_${{ steps.version.outputs.tag }}_${{ matrix.arch }}
+          path: builds/${{ steps.version.outputs.busybox_version }}/${{ matrix.arch }}/busybox
 
   release:
     name: Release
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -47,30 +60,31 @@ jobs:
 
       - name: Prepare release
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
           mkdir release
           for dir in artifacts/busybox_*; do
-            name=$(basename "$dir")
-            cp "$dir/busybox" "release/${name}"
-            chmod +x "release/${name}"
+            # dir name: busybox_v1.36.1-20260401_amd64
+            arch="${dir##*_}"
+            cp "$dir/busybox" "release/busybox_${TAG}_${arch}"
+            chmod +x "release/busybox_${TAG}_${arch}"
           done
           ls -la release/
           for f in release/*; do
-            echo "$f: $(file "$f" | cut -d: -f2)"
+            echo "$(basename "$f"): $(file "$f" | cut -d: -f2)"
             sha256sum "$f"
           done
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          name: BusyBox v${{ inputs.version }}
+          name: BusyBox ${{ steps.version.outputs.tag }}
           body: |
-            Minimal BusyBox v${{ inputs.version }} static builds (musl) for E2B sandbox systeminit.
+            Minimal BusyBox static builds (musl) for E2B sandbox systeminit.
 
-            | File | Arch | Size |
-            |------|------|------|
-            | `busybox_${{ inputs.version }}_amd64` | x86-64 | see below |
-            | `busybox_${{ inputs.version }}_arm64` | aarch64 | see below |
+            | File | Arch |
+            |------|------|
+            | `busybox_${{ steps.version.outputs.tag }}_amd64` | x86-64 |
+            | `busybox_${{ steps.version.outputs.tag }}_arm64` | aarch64 |
 
-            Built with only ~47 systeminit applets. See [`build.sh`](../../blob/main/build.sh) for config.
+            Built with ~47 systeminit applets. See [`build.sh`](../../blob/main/build.sh) for config.
           files: release/*
