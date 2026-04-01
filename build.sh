@@ -84,36 +84,46 @@ for applet in "${APPLETS[@]}"; do
   sed -i "s/# CONFIG_${applet} is not set/CONFIG_${applet}=y/" .config
 done
 
-cat >> .config <<'EOF'
-CONFIG_STATIC=y
-CONFIG_FEATURE_SH_STANDALONE=y
-CONFIG_FEATURE_PREFER_APPLETS=y
-CONFIG_FEATURE_INIT_SYSLOG=y
-CONFIG_FEATURE_MOUNT_FLAGS=y
-CONFIG_FEATURE_MOUNT_LOOP=y
-CONFIG_FEATURE_MOUNT_HELPERS=y
-CONFIG_FEATURE_FSTAB_GENERATION=y
-CONFIG_FEATURE_PIDFILE=y
-CONFIG_FEATURE_SYSLOG=y
-EOF
+# Enable features via sed (appending to .config doesn't survive make oldconfig)
+FEATURES=(
+  STATIC FEATURE_SH_STANDALONE FEATURE_PREFER_APPLETS
+  FEATURE_INIT_SYSLOG FEATURE_MOUNT_FLAGS FEATURE_MOUNT_LOOP
+  FEATURE_MOUNT_HELPERS FEATURE_FSTAB_GENERATION
+  FEATURE_PIDFILE FEATURE_SYSLOG
+)
+for feat in "${FEATURES[@]}"; do
+  sed -i "s/# CONFIG_${feat} is not set/CONFIG_${feat}=y/" .config
+done
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 # Native build on matching arch — use musl-gcc for static musl linking.
-# musl-gcc doesn't include kernel headers by default. Rather than adding
-# -I/usr/include (which pulls in glibc headers and breaks the build),
-# install musl-dev which includes the kernel headers musl needs, and
-# copy any missing kernel headers into the musl include path.
+# musl-gcc doesn't include kernel headers (linux/vt.h etc). Copy them
+# into musl's include directory from the system kernel headers.
 CC="musl-gcc"
-MUSL_INCLUDE="$(dirname "$(musl-gcc -print-file-name=libc.a)")/../include"
+MUSL_INCLUDE=$(echo "" | musl-gcc -E -Wp,-v - 2>&1 | grep "^ /" | head -1 | tr -d " ")
+if [ -z "$MUSL_INCLUDE" ] || [ ! -d "$MUSL_INCLUDE" ]; then
+  echo "ERROR: cannot find musl include directory"
+  exit 1
+fi
+echo "musl include: $MUSL_INCLUDE"
 if [ ! -f "${MUSL_INCLUDE}/linux/vt.h" ]; then
   echo "Copying kernel headers to musl include path..."
+  # linux/ and asm-generic/ are arch-independent
   cp -rn /usr/include/linux "${MUSL_INCLUDE}/" 2>/dev/null || true
-  cp -rn /usr/include/asm "${MUSL_INCLUDE}/" 2>/dev/null || true
   cp -rn /usr/include/asm-generic "${MUSL_INCLUDE}/" 2>/dev/null || true
   cp -rn /usr/include/mtd "${MUSL_INCLUDE}/" 2>/dev/null || true
+  # asm/ is arch-specific: /usr/include/{triplet}/asm/ (e.g. aarch64-linux-gnu, x86_64-linux-gnu)
+  if [ ! -d "${MUSL_INCLUDE}/asm" ]; then
+    TRIPLET=$(gcc -dumpmachine 2>/dev/null)
+    if [ -d "/usr/include/${TRIPLET}/asm" ]; then
+      cp -r "/usr/include/${TRIPLET}/asm" "${MUSL_INCLUDE}/asm"
+    fi
+  fi
 fi
 
-make oldconfig CC="$CC" HOSTCC=gcc < /dev/null
+# Verify critical settings survived config
+grep "^CONFIG_STATIC=y" .config || { echo "ERROR: CONFIG_STATIC not set"; exit 1; }
+
 echo "Building ($(nproc) jobs)..."
 make -j"$(nproc)" CC="$CC" HOSTCC=gcc
 strip busybox
