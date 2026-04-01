@@ -98,12 +98,20 @@ CONFIG_FEATURE_SYSLOG=y
 EOF
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-# Native build on matching arch — use musl-gcc for static musl linking
+# Native build on matching arch — use musl-gcc for static musl linking.
+# musl-gcc doesn't include kernel headers by default. Rather than adding
+# -I/usr/include (which pulls in glibc headers and breaks the build),
+# install musl-dev which includes the kernel headers musl needs, and
+# copy any missing kernel headers into the musl include path.
 CC="musl-gcc"
-
-# musl-gcc doesn't search kernel headers by default; point it there
-KERNEL_HEADERS="/usr/include"
-export CFLAGS="-I${KERNEL_HEADERS}"
+MUSL_INCLUDE="$(dirname "$(musl-gcc -print-file-name=libc.a)")/../include"
+if [ ! -f "${MUSL_INCLUDE}/linux/vt.h" ]; then
+  echo "Copying kernel headers to musl include path..."
+  cp -rn /usr/include/linux "${MUSL_INCLUDE}/" 2>/dev/null || true
+  cp -rn /usr/include/asm "${MUSL_INCLUDE}/" 2>/dev/null || true
+  cp -rn /usr/include/asm-generic "${MUSL_INCLUDE}/" 2>/dev/null || true
+  cp -rn /usr/include/mtd "${MUSL_INCLUDE}/" 2>/dev/null || true
+fi
 
 make oldconfig CC="$CC" HOSTCC=gcc < /dev/null
 echo "Building ($(nproc) jobs)..."
