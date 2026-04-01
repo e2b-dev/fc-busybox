@@ -71,8 +71,10 @@ jobs:
           ls -la release/
           for f in release/*; do
             echo "$(basename "$f"): $(file "$f" | cut -d: -f2)"
-            sha256sum "$f"
           done
+          # Generate checksums file for downstream verification
+          cd release && sha256sum busybox_* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create release
         uses: softprops/action-gh-release@v2
