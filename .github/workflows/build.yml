@@ -39,7 +39,7 @@ jobs:
         run: sudo BUSYBOX_VERSION=${{ steps.version.outputs.busybox_version }} TARGET_ARCH=${{ matrix.arch }} ./build.sh
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: busybox_${{ steps.version.outputs.tag }}_${{ matrix.arch }}
           path: builds/${{ steps.version.outputs.busybox_version }}/${{ matrix.arch }}/busybox
@@ -54,7 +54,7 @@ jobs:
         run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
