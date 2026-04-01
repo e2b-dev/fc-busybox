@@ -33,12 +33,36 @@ echo "=== Building BusyBox ${BUSYBOX_VERSION} for ${GO_ARCH} (${NATIVE_ARCH}) ==
 apt-get update -qq
 apt-get install -y -qq build-essential musl-tools linux-headers-generic curl bzip2 >/dev/null
 
-# ── Download source ───────────────────────────────────────────────────────────
+# ── Download & verify source ──────────────────────────────────────────────────
+# SHA256 checksums from https://busybox.net/downloads/SHA256SUM
+declare -A BUSYBOX_SHA256=(
+  ["1.36.1"]="b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
+)
+
 SRCDIR="/tmp/busybox-src-${BUSYBOX_VERSION}-${GO_ARCH}"
 if [ ! -d "$SRCDIR" ]; then
+  TARBALL="/tmp/busybox-${BUSYBOX_VERSION}.tar.bz2"
   echo "Downloading BusyBox ${BUSYBOX_VERSION}..."
-  curl -sL "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" | tar xj -C /tmp
+  curl -sL "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" -o "$TARBALL"
+
+  EXPECTED="${BUSYBOX_SHA256[$BUSYBOX_VERSION]:-}"
+  if [ -n "$EXPECTED" ]; then
+    ACTUAL=$(sha256sum "$TARBALL" | cut -d' ' -f1)
+    if [ "$ACTUAL" != "$EXPECTED" ]; then
+      echo "ERROR: SHA256 mismatch for busybox-${BUSYBOX_VERSION}.tar.bz2"
+      echo "  Expected: $EXPECTED"
+      echo "  Got:      $ACTUAL"
+      rm -f "$TARBALL"
+      exit 1
+    fi
+    echo "SHA256 verified."
+  else
+    echo "WARNING: No SHA256 on record for version ${BUSYBOX_VERSION}, skipping verification."
+  fi
+
+  tar xjf "$TARBALL" -C /tmp
   mv "/tmp/busybox-${BUSYBOX_VERSION}" "$SRCDIR"
+  rm -f "$TARBALL"
 fi
 
 cd "$SRCDIR"
@@ -76,7 +100,10 @@ EOF
 # ── Build ─────────────────────────────────────────────────────────────────────
 # Native build on matching arch — use musl-gcc for static musl linking
 CC="musl-gcc"
-MAKE_OPTS=""
+
+# musl-gcc doesn't search kernel headers by default; point it there
+KERNEL_HEADERS="/usr/include"
+export CFLAGS="-I${KERNEL_HEADERS}"
 
 make oldconfig CC="$CC" HOSTCC=gcc < /dev/null
 echo "Building ($(nproc) jobs)..."
