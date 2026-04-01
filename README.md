@@ -37,15 +37,3 @@ sudo BUSYBOX_VERSION=1.37.0 ./build.sh
 ```
 
 Output: `builds/{version}/{arch}/busybox`
-
-## Updating E2B infra
-
-After a release, copy the binaries to `packages/orchestrator/pkg/template/build/core/systeminit/`:
-
-```bash
-gh release download -R e2b-dev/fc-busybox -p 'busybox_*' -D /tmp/bb
-cp /tmp/bb/busybox_1.36.1_amd64 path/to/systeminit/busybox_1.36.1_amd64
-cp /tmp/bb/busybox_1.36.1_arm64 path/to/systeminit/busybox_1.36.1_arm64
-```
-
-Update the `//go:embed` directives in `busybox_amd64.go` and `busybox_arm64.go` to match.
