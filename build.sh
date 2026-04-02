@@ -69,31 +69,13 @@ cd "$SRCDIR"
 make distclean 2>/dev/null || true
 
 # ── Configure ─────────────────────────────────────────────────────────────────
-make allnoconfig
+# Use defconfig (full default config) to match the original embedded binary
+# which had ~392 applets including ash, ip, ifconfig, cat, ln, cp, etc.
+# The init script uses "#!/usr/bin/busybox ash" so ash must be present.
+make defconfig
 
-# Enable only the applets needed for E2B sandbox systeminit
-APPLETS=(
-  ARCH BASE64 BASENAME BUSYBOX CHATTR CHMOD CHOWN CHROOT CLEAR
-  DATE DIRNAME DMESG ECHO EXPR FALSE FIND GREP HALT HEAD HOSTNAME
-  INIT KILL LSATTR MKDIR MKNOD MKTEMP MOUNT PIVOT_ROOT POWEROFF
-  READLINK REBOOT RMDIR SLEEP SORT STAT STTY SWITCH_ROOT SYNC
-  TAIL TEST TOUCH TRUE UMOUNT UNAME UNIQ XARGS
-)
-
-for applet in "${APPLETS[@]}"; do
-  sed -i "s/# CONFIG_${applet} is not set/CONFIG_${applet}=y/" .config
-done
-
-# Enable features via sed (appending to .config doesn't survive make oldconfig)
-FEATURES=(
-  STATIC FEATURE_SH_STANDALONE FEATURE_PREFER_APPLETS
-  FEATURE_INIT_SYSLOG FEATURE_MOUNT_FLAGS FEATURE_MOUNT_LOOP
-  FEATURE_MOUNT_HELPERS FEATURE_FSTAB_GENERATION
-  FEATURE_PIDFILE FEATURE_SYSLOG
-)
-for feat in "${FEATURES[@]}"; do
-  sed -i "s/# CONFIG_${feat} is not set/CONFIG_${feat}=y/" .config
-done
+# Force static linking (defconfig defaults to dynamic)
+sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/" .config
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 # Native build on matching arch — use musl-gcc for static musl linking.
