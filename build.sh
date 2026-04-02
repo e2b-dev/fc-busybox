@@ -77,6 +77,9 @@ make defconfig
 # Force static linking (defconfig defaults to dynamic)
 sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/" .config
 
+# Disable applets that don't compile with musl headers
+sed -i "s/CONFIG_TC=y/# CONFIG_TC is not set/" .config
+
 # ── Build ─────────────────────────────────────────────────────────────────────
 # Native build on matching arch — use musl-gcc for static musl linking.
 # musl-gcc doesn't include kernel headers (linux/vt.h etc). Copy them
