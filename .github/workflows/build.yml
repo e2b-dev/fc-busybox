@@ -66,13 +66,15 @@ jobs:
 
       - name: Prepare GCS upload
         run: |
-          # Restructure to {version}/{arch}/busybox for GCS bucket layout
+          # Restructure to {version}/{arch}/busybox with SHA256 sidecar for GCS bucket layout
           VERSION="${{ steps.version.outputs.busybox_version }}"
           mkdir -p "gcs-upload/${VERSION}/amd64" "gcs-upload/${VERSION}/arm64"
           for dir in artifacts/busybox_*; do
             arch="${dir##*_}"
             cp "$dir/busybox" "gcs-upload/${VERSION}/${arch}/busybox"
             chmod +x "gcs-upload/${VERSION}/${arch}/busybox"
+            # Generate SHA256 sidecar for downstream verification
+            (cd "gcs-upload/${VERSION}/${arch}" && sha256sum busybox > busybox.sha256)
           done
           ls -laR gcs-upload/
 
