@@ -77,13 +77,17 @@ jobs:
           ls -laR gcs-upload/
 
       - name: Setup GCP auth
-        uses: google-github-actions/auth@v1
+        id: gcp-auth
+        uses: google-github-actions/auth@v3
+        continue-on-error: true
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Upload to GCS
-        uses: google-github-actions/upload-cloud-storage@v1
+        if: steps.gcp-auth.outcome == 'success'
+        uses: google-github-actions/upload-cloud-storage@v3
+        continue-on-error: true
         with:
           path: gcs-upload
           destination: ${{ vars.GCP_BUCKET_NAME }}/busybox
