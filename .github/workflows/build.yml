@@ -6,6 +6,7 @@ on:
       - "v*"
 
 permissions:
+  id-token: write
   contents: write
 
 jobs:
@@ -44,8 +45,8 @@ jobs:
           name: busybox_${{ steps.version.outputs.tag }}_${{ matrix.arch }}
           path: builds/${{ steps.version.outputs.busybox_version }}/${{ matrix.arch }}/busybox
 
-  release:
-    name: Release
+  publish:
+    name: Publish
     needs: build
     runs-on: ubuntu-24.04
     steps:
@@ -58,25 +59,44 @@ jobs:
         with:
           path: artifacts
 
-      - name: Prepare release
+      - name: Prepare GCS upload
+        run: |
+          # Restructure to {arch}/busybox for GCS bucket layout
+          mkdir -p gcs-upload/amd64 gcs-upload/arm64
+          for dir in artifacts/busybox_*; do
+            arch="${dir##*_}"
+            cp "$dir/busybox" "gcs-upload/${arch}/busybox"
+            chmod +x "gcs-upload/${arch}/busybox"
+          done
+          ls -laR gcs-upload/
+
+      - name: Setup GCP auth
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Upload to GCS
+        uses: google-github-actions/upload-cloud-storage@v1
+        with:
+          path: gcs-upload
+          destination: ${{ vars.GCP_BUCKET_NAME }}/busybox
+          gzip: false
+          parent: false
+
+      - name: Prepare GitHub release
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           mkdir release
           for dir in artifacts/busybox_*; do
-            # dir name: busybox_v1.36.1-20260401_amd64
             arch="${dir##*_}"
             cp "$dir/busybox" "release/busybox_${TAG}_${arch}"
             chmod +x "release/busybox_${TAG}_${arch}"
           done
-          ls -la release/
-          for f in release/*; do
-            echo "$(basename "$f"): $(file "$f" | cut -d: -f2)"
-          done
-          # Generate checksums file for downstream verification
           cd release && sha256sum busybox_* > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Create release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: BusyBox ${{ steps.version.outputs.tag }}
